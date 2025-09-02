@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Issues (WCAG & Lighthouse)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root{
+    --bg:#f7f9fc; --panel:#ffffff;
+    --ink:#1f2937; --muted:#4b5563; --line:#e5e7eb; --line-strong:#d1d5db; --accent:#0b69ff;
+    --sev-high:#e11d48; --sev-med:#f59e0b; --sev-low:#2563eb;
+    --chip:#eef2ff; --chip-line:#dbeafe;
+    --code-bg:#f3f4f6; --code-line:#e5e7eb;
+    --shadow:0 8px 24px rgba(15,23,42,.06);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 system-ui,-apple-system,Segoe UI,Roboto,Arial}
+  .wrap{max-width:980px;margin:32px auto;padding:0 16px}
+  h1{margin:0 0 16px;font-weight:700}
+
+  /* form */
+  form{display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:var(--panel);padding:12px;border-radius:14px;border:1px solid var(--line);box-shadow:var(--shadow)}
+  input,button{font:inherit}
+  input[type=url]{flex:1;min-width:260px;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:#fff;color:var(--ink)}
+  button{padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:#fff;color:var(--ink);cursor:pointer}
+  button:disabled{opacity:.6;cursor:not-allowed}
+  .result{margin-top:18px}
+
+  /* loading */
+  .loading{display:flex;gap:10px;align-items:center;background:var(--panel);border:1px dashed var(--line-strong);padding:12px;border-radius:12px;box-shadow:var(--shadow)}
+  .spinner{width:18px;height:18px;border:3px solid #e5e7eb;border-top-color:#0b69ff;border-radius:50%;animation:spin 1s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* cards */
+  details.task{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:12px 0;overflow:hidden;box-shadow:var(--shadow)}
+  details.task .head{list-style:none;cursor:pointer;padding:14px 16px;display:flex;align-items:center;gap:12px;position:relative;border:2px dashed var(--line-strong);border-radius:12px;margin:10px;background:#fff}
+  details.task .head::-webkit-details-marker{display:none}
+  .chev{width:10px;height:10px;border-right:2px solid #64748b;border-bottom:2px solid #64748b;transform:rotate(-45deg);transition:transform .25s}
+  details[open] .chev{transform:rotate(45deg)}
+  .title{font-weight:650;letter-spacing:.2px;display:flex;align-items:baseline;gap:8px;max-width:600px}
+
+  .right-meta{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+  .count{font-size:12px;background:#f1f5ff;border:1px solid #dbeafe;color:#0b4fff;border-radius:999px;padding:4px 10px}
+  .wcag-chip{display:inline-flex;gap:6px;align-items:center;background:#f1f5ff;border:1px solid #dbeafe;padding:4px 10px;border-radius:999px;font-size:12px;white-space:nowrap}
+  .wcag-chip a{color:#0b69ff;text-decoration:none} .wcag-chip a:hover{text-decoration:underline}
+  .sev{font-size:12px;padding:4px 10px;border-radius:999px;border:1px solid;letter-spacing:.3px;font-weight:600}
+  .sev.high{border-color:var(--sev-high);color:var(--sev-high);background:#fff5f7}
+  .sev.med{border-color:var(--sev-med); color:var(--sev-med); background:#fff8ec}
+  .sev.low{border-color:var(--sev-low); color:var(--sev-low); background:#f2f7ff}
+
+  .body{padding:6px 16px 16px;border-top:1px solid var(--line);background:#fff}
+  .sec{margin:12px 0 0} .sec h4{margin:0 0 6px;font-size:14px;color:#111827;letter-spacing:.2px}
+
+  ul,ol{margin:6px 0 0 18px} li{margin:10px 0}
+  a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
+  .tiny{font-size:12px;color:var(--muted)}
+  .chip{display:inline-block;background:var(--chip);border:1px solid var(--chip-line);padding:3px 8px;border-radius:10px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px}
+  .codebox{display:block;white-space:pre-wrap;word-break:break-word;background:var(--code-bg);border:1px solid var(--code-line);border-radius:8px;padding:10px;margin-top:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1 id="pageTitle">Issues</h1>
+
+  <form id="auditForm">
+    <input type="url" id="siteUrl" placeholder="https://example.com" required />
+    <button id="runBtn" type="submit">Run</button>
+  </form>
+
+  <div class="result" id="result"></div>
+</div>
+
+<script>
+/* ====== config ====== */
+const WEBHOOK_URL  = "https://workflows.draadwerk.nl/webhook/lighthouse-audit";
+
+/* ====== WCAG deep-linking ====== */
+const WCAG_NORM_BASE = "https://www.w3.org/TR/WCAG21/#";
+const WCAG_SLUG = {
+  "1.1.1":"non-text-content",
+  "1.3.1":"info-and-relationships",
+  "1.4.3":"contrast-minimum",
+  "1.4.4":"resize-text",
+  "1.4.10":"reflow",
+  "1.4.12":"text-spacing",
+  "2.1.1":"keyboard",
+  "2.1.2":"no-keyboard-trap",
+  "2.4.1":"bypass-blocks",
+  "2.4.2":"page-titled",
+  "2.4.3":"focus-order",
+  "2.4.4":"link-purpose-in-context",
+  "2.4.6":"headings-and-labels",
+  "2.4.7":"focus-visible",
+  "3.1.1":"language-of-page",
+  "3.3.2":"labels-or-instructions",
+  "4.1.1":"parsing",
+  "4.1.2":"name-role-value"
+};
+function wcagLinkFor(code){
+  const slug = WCAG_SLUG[code];
+  if(!slug) return null;
+  return WCAG_NORM_BASE + slug;
+}
+
+/* ====== helpers ====== */
+const getHost=(u)=>{try{return new URL(u).host;}catch{return""}};
+const getPath=(u)=>{try{const x=new URL(u);return x.pathname+(x.search||"");}catch{return""}};
+const sameSite=(p,u)=>{try{return new URL(p).host===new URL(u).host;}catch{return false}};
+const ce=(t,h,c)=>{const e=document.createElement(t); if(c) e.className=c; if(h!==undefined) e.innerHTML=h; return e;};
+const esc=(s)=>String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'","&#39;");
+function mdInline(str){ if(typeof str!=='string') return ''; return str
+  .replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
+  .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,'<a href="$2" target="_blank" rel="noreferrer">$1</a>')
+  .replace(/`([^`]+)`/g,'<code>$1</code>'); }
+
+const loadingHTML = (msg='Still processing…') => `
+  <div class="loading" role="status" aria-live="polite">
+    <span class="spinner" aria-hidden="true"></span>
+    <span>${msg}</span>
+  </div>
+`;
+
+/* ====== parse webhook (robust to n8n shapes) ====== */
+function firstItem(x){ if (Array.isArray(x) && x.length) return x[0]; return x; }
+function getJsonish(x){ if (x && typeof x === 'object' && x.json) return x.json; return x; }
+function normalize(webhook){
+  let p = firstItem(webhook);
+  if (typeof p === 'string') { try{ p = JSON.parse(p); }catch{} }
+  p = getJsonish(p);
+  if (p && p.data) p = getJsonish(p.data);
+
+  if (p?.lhr?.audits) {
+    return { audits: p.lhr.audits, pageUrl: p.lhr.requestedUrl || p.id || '' , status: 'completed' };
+  }
+  if (p && (p.id || p.status || p.content)) {
+    let audits = null;
+    if (p.content) {
+      if (typeof p.content === 'string') { try { audits = JSON.parse(p.content); } catch { audits = null; } }
+      else if (typeof p.content === 'object') { audits = p.content; }
+    }
+    return { audits, pageUrl: p.id || '', status: p.status || (audits ? 'completed' : 'pending') };
+  }
+  if (Array.isArray(webhook) && webhook[0]?.json) {
+    const row = webhook[0].json;
+    if (row && (row.id || row.status || row.content)) {
+      let audits = null;
+      if (row.content) {
+        if (typeof row.content === 'string') { try { audits = JSON.parse(row.content); } catch { audits = null; } }
+        else if (typeof row.content === 'object') { audits = row.content; }
+      }
+      return { audits, pageUrl: row.id || '', status: row.status || (audits ? 'completed' : 'pending') };
+    }
+  }
+  return null;
+}
+
+/* ====== collect URLs & nodes ====== */
+function collectUrls(audit){
+  const items = audit?.details?.items;
+  if (!Array.isArray(items)) return [];
+  const urls=new Set();
+  const readUrl = v => {
+    if (!v) return;
+    if (typeof v === 'string' && /^https?:\/\//.test(v)) { urls.add(v); return; }
+    if (typeof v === 'object') {
+      if (typeof v.url === 'string') urls.add(v.url);
+      if (typeof v.text === 'string' && /^https?:\/\//.test(v.text)) urls.add(v.text);
+    }
+  };
+  const walk = (obj, depth=0) => {
+    if (!obj || depth>3) return;
+    if (Array.isArray(obj)) { obj.forEach(x=>walk(x, depth+1)); return; }
+    if (typeof obj !== 'object') return;
+    for (const [k,v] of Object.entries(obj)) {
+      if (/url$/i.test(k) || k==='source' || k==='sourceURL') readUrl(v);
+    }
+    Object.values(obj).forEach(v=>walk(v, depth+1));
+  };
+  items.forEach(r => walk(r,0));
+  return Array.from(urls);
+}
+
+function collectNodes(audit){
+  const items = audit?.details?.items;
+  if (!Array.isArray(items)) return [];
+  const nodes=[];
+  const pushNode = (n) => {
+    if(!n || typeof n!=='object') return;
+    const selector = n.selector || n.path || n.xpath || n.nodeLabel || null;
+    const snippet  = n.snippet || n.outerHTML || null; // prefer full HTML if present
+    const idSel = selector && /#([A-Za-z0-9\-_]+)/.exec(selector)?.[1] || null;
+    const idSnip = snippet  && /id\s*=\s*["']([^"']+)["']/.exec(snippet)?.[1]   || null;
+    nodes.push({selector: selector || null, snippet: snippet || null, id: idSel || idSnip || null});
+  };
+  const walk = (obj, depth=0) => {
+    if (!obj || depth>4) return;
+    if (Array.isArray(obj)) { obj.forEach(x=>walk(x, depth+1)); return; }
+    if (typeof obj !== 'object') return;
+    if (obj.node) pushNode(obj.node);
+    if (Array.isArray(obj.nodes)) obj.nodes.forEach(pushNode);
+    for (const v of Object.values(obj)) {
+      if (v && typeof v==='object' && (v.selector || v.snippet || v.nodeLabel || v.path || v.xpath)) pushNode(v);
+      else walk(v, depth+1);
+    }
+  };
+  items.forEach(row => walk(row,0));
+  return nodes; // keep all (no dedup) → reflect everything Lighthouse reported
+}
+
+/* ====== scoring & mapping ====== */
+const isFail=(A,id)=>{const a=A[id]; if(!a||a.scoreDisplayMode==='notApplicable') return false; return (a.score==null||a.score<1)};
+
+const WCAG_MAP = {
+  // Names/labels
+  'button-name':                  [{code:'4.1.2'}],
+  'link-name':                    [{code:'2.4.4'},{code:'4.1.2'}],
+  'image-alt':                    [{code:'1.1.1'}],
+  'label':                        [{code:'3.3.2'},{code:'1.3.1'}],
+  'select-name':                  [{code:'4.1.2'}],
+  // Structure/semantics
+  'bypass':                       [{code:'2.4.1'}],
+  'document-title':               [{code:'2.4.2'}],
+  'html-has-lang':                [{code:'3.1.1'}],
+  'heading-order':                [{code:'2.4.6'}],
+  'list':                         [{code:'1.3.1'}],
+  'table-headers':                [{code:'1.3.1'}],
+  'frame-title':                  [{code:'2.4.1'},{code:'4.1.2'}],
+  'duplicate-id':                 [{code:'4.1.1'}],
+  'meta-viewport':                [{code:'1.4.4'},{code:'1.4.10'}],
+  // Keyboard/focus
+  'focus-order':                  [{code:'2.4.3'}],
+  'focus-visible':                [{code:'2.4.7'}],
+  // Color/contrast
+  'color-contrast':               [{code:'1.4.3'}],
+};
+const wcagFor = id => WCAG_MAP[id] || [];
+
+/* ====== rules (grouping + how-to) ====== */
+const RULES = [
+  {
+    id:'color-contrast',
+    title:'Background and foreground colors do not have a sufficient contrast ratio',
+    severity:'high',
+    matches:A=>isFail(A,'color-contrast'),
+    elementsFrom:['color-contrast'],
+    urlsFrom:[],
+    how:[
+      'Meet AA contrast: **4.5:1** for normal text, **3:1** for large text (≥24px or 19px bold).',
+      'Adjust `color` / `background-color` in CSS until the ratio meets WCAG 2.1 AA.',
+      'You can also increase font size/weight or add a subtle background to reach the threshold.'
+    ]
+  },
+  { id:'button-name', title:'Buttons do not have an accessible name', severity:'high',
+    matches:A=>isFail(A,'button-name'), elementsFrom:['button-name'], urlsFrom:[],
+    how:['Ensure each `<button>` has a text label, `aria-label`, or accessible name.'] },
+  { id:'document-title', title:'Document does not have a meta description', severity:'high',
+    matches:A=>isFail(A,'meta-description'), elementsFrom:[], urlsFrom:[],
+    how:['Add a concise `<meta name="description" content="...">` to the document head.'] },
+  { id:'first-contentful-paint', title:'First Contentful Paint', severity:'high',
+    matches:A=>isFail(A,'first-contentful-paint'), elementsFrom:[], urlsFrom:[],
+    how:['Reduce render-blocking resources and server response time to improve FCP.'] },
+  { id:'font-display', title:'Font display', severity:'high',
+    matches:A=>isFail(A,'font-display'), elementsFrom:[], urlsFrom:[],
+    how:['Set `font-display: swap` or `optional` to avoid invisible text during load.'] },
+  { id:'forced-reflow', title:'Forced reflow', severity:'high',
+    matches:A=>isFail(A,'mainthread-work-breakdown')||isFail(A,'long-tasks'),
+    elementsFrom:[], urlsFrom:[], how:['Avoid layout thrashing; batch DOM reads/writes and reduce heavy JS.'] },
+  { id:'heading-order', title:'Heading elements are not in a sequentially-descending order', severity:'high',
+    matches:A=>isFail(A,'heading-order'), elementsFrom:['heading-order'], urlsFrom:[],
+    how:['Use a logical heading outline (h1 → h2 → h3, etc.) without skipping levels.'] },
+  { id:'uses-optimized-images', title:'Improve image delivery', severity:'high',
+    matches:A=>isFail(A,'uses-optimized-images')||isFail(A,'uses-responsive-images'),
+    elementsFrom:[], urlsFrom:['uses-optimized-images','uses-responsive-images'],
+    how:['Compress and resize images; serve responsive sizes with `srcset`/`sizes`.'] },
+  { id:'largest-contentful-paint', title:'Largest Contentful Paint', severity:'high',
+    matches:A=>isFail(A,'largest-contentful-paint')||isFail(A,'largest-contentful-paint-element')||isFail(A,'preload-lcp-image'),
+    elementsFrom:['largest-contentful-paint-element'], urlsFrom:['preload-lcp-image','largest-contentful-paint-element'],
+    how:['Compress/resize the hero image; preload it; reduce JS above the fold.'] },
+  { id:'layout-shift', title:'Layout shift culprits', severity:'high',
+    matches:A=>isFail(A,'layout-shift-elements')||isFail(A,'cumulative-layout-shift'),
+    elementsFrom:['layout-shift-elements'], urlsFrom:[],
+    how:['Reserve space (width/height or `aspect-ratio`) for images/iframes; pre-size webfonts.'] },
+];
+
+/* ====== build tasks ====== */
+function buildTasks(audits,pageUrl){
+  const tasks=[]; const used=new Set();
+  RULES.forEach(rule=>{
+    if(!rule.matches(audits)) return;
+    let els=[]; let urls=[]; let wcag=[];
+    (rule.elementsFrom||[]).forEach(id=>{
+      if(audits[id]){ els=els.concat(collectNodes(audits[id])); wcag=wcag.concat(wcagFor(id)); used.add(id); }
+    });
+    (rule.urlsFrom||[]).forEach(id=>{
+      if(audits[id]){ urls=urls.concat(collectUrls(audits[id])); wcag=wcag.concat(wcagFor(id)); used.add(id); }
+    });
+    const uniqueWCAG=[...new Map((wcag||[]).map(x=>[x.code,x])).values()].filter(x=>WCAG_SLUG[x.code]);
+    tasks.push({
+      id:rule.id, title:rule.title, severity:rule.severity,
+      elements: els.slice(0,500),
+      urls:[...new Set(urls)].slice(0,100),
+      wcag: uniqueWCAG,
+      how:rule.how
+    });
+  });
+
+  Object.entries(audits).forEach(([id,a])=>{
+    if(used.has(id)) return;
+    if(!a || a.scoreDisplayMode==='notApplicable') return;
+    const failing=(a.score==null||a.score<1); if(!failing) return;
+    const els=collectNodes(a); const urls=collectUrls(a);
+    const sev = (a.score==null) ? 'med' : (a.score<0.3?'high':a.score<0.7?'med':'low');
+    const w = (wcagFor(id) || []).filter(x=>WCAG_SLUG[x.code]);
+    tasks.push({
+      id:'audit-'+id, title:(a.title||id), severity:sev,
+      elements: els.slice(0,500),
+      urls:[...new Set(urls)].slice(0,100),
+      wcag: w,
+      how:[ a.description ? a.description : 'Review this audit and address the listed issues.' ]
+    });
+  });
+
+  const rank={high:0,med:1,low:2};
+  tasks.sort((a,b)=> (rank[a.severity]-rank[b.severity]) || a.title.localeCompare(b.title));
+  return tasks;
+}
+
+/* ====== render ====== */
+function renderTasks(tasks,pageUrl){
+  const out=document.getElementById('result');
+  const title=document.getElementById('pageTitle');
+  out.innerHTML=''; title.textContent=`Issues (${tasks.length})`;
+  if(!tasks.length){ out.innerHTML='<p>No issues detected.</p>'; return; }
+  const base = pageUrl ? pageUrl.split('#')[0] : '';
+
+  const wcagChips = (arr) => {
+    if(!arr || !arr.length) return '';
+    return arr.map(w => {
+      const link = wcagLinkFor(w.code);
+      if (!link) return '';
+      return `<span class="wcag-chip"><a href="${link}" target="_blank" rel="noreferrer">WCAG ${w.code}</a></span>`;
+    }).join('');
+  };
+
+  tasks.forEach(t=>{
+    const details=document.createElement('details'); // closed by default
+    details.className='task';
+
+    const summary=ce('summary','', 'head');
+    const countVal = t.elements ? t.elements.length : 0;
+    const countHtml = countVal > 0 ? `<span class="count">${countVal}</span>` : '';
+    const sevText = t.severity==='high'?'HIGH':t.severity==='med'?'MEDIUM':'LOW';
+    const wcagHtml = wcagChips(t.wcag);
+    summary.innerHTML=`
+      <span class="chev"></span>
+      <span class="title">${t.title}</span>
+      <div class="right-meta">
+        ${countHtml}
+        ${wcagHtml}
+        <span class="sev ${t.severity}">${sevText}</span>
+      </div>
+    `;
+    details.appendChild(summary);
+
+    const body=ce('div','', 'body');
+
+    if(t.elements && t.elements.length){
+      const sec=ce('div','', 'sec');
+      sec.appendChild(ce('h4','Selectors'));
+      const list=document.createElement('ol');
+      t.elements.forEach(el=>{
+        const li=document.createElement('li');
+        const id=el.id;
+        const link=(base && id) ? ` — <a href="${base}#${encodeURIComponent(id)}" target="_blank" rel="noreferrer">Open on page #${esc(id)}</a>` : '';
+        const snip= el.snippet ? `<div class="codebox">${esc(el.snippet)}</div>` : '';
+        const sel = el.selector ? `<div style="margin-top:6px"><span class="chip">${esc(el.selector)}</span>${link}</div>` : (id?link:'');
+        li.innerHTML = `${snip}${sel}`;
+        list.appendChild(li);
+      });
+      sec.appendChild(list);
+      body.appendChild(sec);
+    }
+
+    if(t.urls && t.urls.length){
+      const sec=ce('div','', 'sec');
+      sec.appendChild(ce('h4','Where to fix'));
+      const ul=document.createElement('ul');
+      t.urls.forEach(u=>{
+        const label = sameSite(pageUrl,u)
+          ? (getPath(u).includes('/wp-content/themes/') ? 'Theme (Divi)' :
+             getPath(u).includes('/wp-includes/') ? 'WordPress core' : 'Same site')
+          : 'Third-party';
+        const li=document.createElement('li');
+        li.innerHTML = `<a href="${u}" target="_blank" rel="noreferrer">${getHost(u)||u}</a> — <code>${getPath(u)||u}</code> <span class="tiny">(${label})</span>`;
+        ul.appendChild(li);
+      });
+      sec.appendChild(ul);
+      body.appendChild(sec);
+    }
+
+    const how=ce('div','', 'sec');
+    how.appendChild(ce('h4','How to fix (short)'));
+    const ul2=document.createElement('ul');
+    (t.how||[]).forEach(h=>ul2.appendChild(ce('li', mdInline(h))));
+    how.appendChild(ul2);
+    body.appendChild(how);
+
+    details.appendChild(body);
+    out.appendChild(details);
+  });
+}
+
+/* ====== polling ====== */
+const POLL_EVERY_MS = 30_000;  // 30s
+const POLL_MAX_MS   = 120_000; // 2m
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+async function callWebhookOnce(url) {
+  try {
+    const r = await fetch(WEBHOOK_URL, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ url, preset: 'desktop' })
+    });
+
+    const text = await r.text();
+    let data; try { data = JSON.parse(text); } catch { data = text; }
+    const norm = normalize(data);
+
+    if (!norm) return { status:'pending' };
+    if (norm.status === 'pending') return { status:'pending' };
+
+    const hasAudits = !!norm.audits && typeof norm.audits === 'object' && Object.keys(norm.audits).length > 0;
+    if (hasAudits) return { status:'complete', norm };
+    return { status:'pending' };
+  } catch {
+    return { status:'pending' };
+  }
+}
+
+async function pollUntilComplete(url) {
+  const deadline = Date.now() + POLL_MAX_MS;
+
+  // show static “Still processing…” with spinner the whole time
+  document.getElementById('result').innerHTML = loadingHTML();
+
+  while (Date.now() < deadline) {
+    const res = await callWebhookOnce(url);
+    if (res.status === 'complete') return res.norm;
+    await sleep(POLL_EVERY_MS);
+  }
+  throw new Error('Timed out waiting for the audit (2 minutes).');
+}
+
+/* ====== submit ====== */
+document.getElementById('auditForm').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const url=document.getElementById('siteUrl').value.trim();
+  if(!url) return;
+
+  const btn=document.getElementById('runBtn');
+  const out=document.getElementById('result');
+  btn.disabled=true; btn.textContent='Running…';
+  out.innerHTML = loadingHTML();
+
+  try{
+    const norm = await pollUntilComplete(url);
+    const tasks=buildTasks(norm.audits, norm.pageUrl || url);
+    renderTasks(tasks, norm.pageUrl || url);
+  }catch(err){
+    console.error(err); out.innerHTML=`<pre>${String(err.message || err)}</pre>`;
+  }finally{
+    btn.disabled=false; btn.textContent='Run';
+  }
+});
+</script>
+</body>
+</html>
